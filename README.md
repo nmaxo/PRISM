@@ -33,12 +33,11 @@ Linux, Python 3.11 and a compatible NVIDIA GPU are required.
 See [system requirements and environment details](docs/installation.md).
 
 ```bash
-git clone --branch main https://github.com/amazon-far/PRISM.git
+git clone --branch main https://github.com/nmaxo/PRISM.git
 cd PRISM
 python3.11 -m venv .venv
 source .venv/bin/activate
 bash install.sh
-wandb login
 ```
 
 ## Data
@@ -55,6 +54,74 @@ Includes object meshes and prepares the student training shards.
 Both training scripts use all visible GPUs on this machine. Set
 `CUDA_VISIBLE_DEVICES=0` for one GPU or `CUDA_VISIBLE_DEVICES=0,1` for a subset.
 Use `--envs-per-gpu` to lower memory use. [Training details](docs/training.md).
+
+## Evaluation / pretrained policy demo
+
+This fork adds [`eval.sh`](eval.sh) for the released depth student on published
+box and ball scenes, and for the earlier box initializer. Install the environment
+and download the data above first; the checkpoints are already in `_ckpts/`.
+Evaluation uses one GPU and one environment. W&B login is not required for eval;
+run `wandb login` before training.
+
+```bash
+source .venv/bin/activate
+bash eval.sh --check                     # Assets, checkpoint SHA256 and CPU actor inference
+bash eval.sh                            # Isaac Sim window, default box scene
+bash eval.sh --headless --steps 100      # Bounded GPU smoke run
+bash eval.sh --demo                      # Unitree materials, live policy depth and goal marker
+```
+
+Select a small box, a ball, or the earlier box policy:
+
+```bash
+bash eval.sh --demo --clip prism_cf_box_m3_v26 --box-color 1 0.25 0.04
+bash eval.sh --demo --clip prism_cf_ball_m1_v10
+bash eval.sh --checkpoint box_23000.pt --headless --steps 100
+```
+
+Clip IDs come from `data/far-prism-data/clips.csv`. This launcher supports box
+and ball clips; `box_23000.pt` and `--box-color` require a box. GUI runs continue
+until the window is closed unless `--steps` is set. `--demo`, `--box-color` and
+`--record` require a display and cannot be combined with `--headless`.
+
+Record a demo with DLAA, the depth panel and simulation-time playback
+(requires `ffmpeg` on `PATH`, for example `sudo apt install ffmpeg`):
+
+```bash
+bash eval.sh --record outputs/eval/small_box.mp4 --clip prism_cf_box_m3_v26 --box-color 1 0.25 0.04
+bash eval.sh --record outputs/eval/ball.mp4 --clip prism_cf_ball_m1_v10 --steps 450
+```
+
+Recording defaults to 450 control steps: 450 frames at 50 FPS, or 9 seconds of
+1920x1080 H.264 video. A matching JSON sidecar stores simulation timestamps and
+render settings. Existing video or sidecar files are rejected. Unitree material
+attribution and license are in [`scripts/demo_assets/README.md`](scripts/demo_assets/README.md).
+
+The launcher works from any working directory and uses the active environment's
+`python3`; `PRISM_PYTHON` can select a different interpreter. For an existing data
+download or a separate output directory:
+
+```bash
+PRISM_PYTHON=/path/to/venv/bin/python bash eval.sh --headless --steps 100 \
+  --data-dir /path/to/far-prism-data --output-dir /path/to/eval-output
+bash eval.sh --help
+python3 tests/test_eval_cli.py            # Lightweight CLI regression check; no simulator needed
+```
+
+Logs, USD caches and the student's `student_geometry_audit.json` go under
+`outputs/eval/` by default; data and generated results stay Git-ignored.
+The launched simulator accepts NVIDIA's EULA through `OMNI_KIT_ACCEPT_EULA=1`.
+
+These are pretrained policy rollouts, not a benchmark success-rate evaluation
+or an exact training resume. The published object visual meshes differ from
+the student's authenticated training geometry, so student runs explicitly use
+HoloSoma's evaluation-only OOD geometry mode and save its audit. Actor, observation,
+action and depth-preprocessing checks remain enabled. Each scene starts at frame
+zero without initial pose noise; training rewards are disabled because the public
+data omits some reward references. Physics/control settings come from the
+checkpoint, with PhysX buffer capacities reduced for this single-environment run.
+The launcher uses the pinned HoloSoma environment/PPO APIs to preserve the released
+actor configuration; generic eval presets would rewrite its legacy CNN flags.
 
 ## Teacher Training
 
